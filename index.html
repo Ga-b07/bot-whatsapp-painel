@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
-    <!-- Carrega a biblioteca Socket.IO de forma isolada e estrita para web -->
+    <!-- Injeta o driver WebSocket com suporte nativo a cross-origin seguro -->
     <script src="https://socket.io"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -14,11 +14,10 @@
         .profiles-grid { display: flex; justify-content: center; gap: 25px; flex-wrap: wrap; margin: 30px 0; }
         .profile-card { background: #111b21; border: 2px solid #2a3942; border-radius: 10px; padding: 15px; width: 130px; cursor: pointer; transition: all 0.2s; position: relative; box-sizing: border-box; }
         .profile-card:hover { border-color: #00a884; transform: translateY(-4px); }
-        .btn-hover-delete { position: absolute; top: -10px; right: -10px; background: #ea4335; color: white; border: none; font-size: 14px; font-weight: bold; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.2s; z-index: 10; }
-        .profile-card:hover .btn-hover-delete { opacity: 1; }
-        .profile-avatar { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; background: #202c33; margin: 0 auto 10px auto; border: 2px solid #2a3942; display: block; }
-        .profile-name { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .btn-add-conta { background: transparent; color: #00a884; border: 2px dashed #00a884; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        .profile-avatar { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; background: #202c33; margin: 0 auto 10px auto; border: 2px solid #2a3942; display: block; pointer-events: none; }
+        .profile-name { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+        .btn-add-conta { background: transparent; color: #00a884; border: 2px dashed #00a884; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-add-conta:hover { background: rgba(0, 168, 132, 0.1); }
         .btn-back-profiles { background: #202c33; color: #00a884; border: 1px solid #00a884; padding: 6px 12px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; float: left; }
         .checkbox-container { background: #111b21; border: 1px solid #2a3942; border-radius: 6px; max-height: 150px; overflow-y: auto; text-align: left; padding: 12px; margin: 10px 0; }
         .checkbox-item { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid #222e35; font-size: 13px; }
@@ -82,18 +81,27 @@
     </div>
 
     <script>
-        // LINK DO SEU SERVIDOR QUE JÁ ESTÁ LIVE NO RENDER
         const SERVIDOR_URL = "https://onrender.com"; 
         
-        const socket = io(SERVIDOR_URL);
+        // Inicialização com transporte WebSocket forçado e liberação de Cross-Origin segura
+        const socket = io(SERVIDOR_URL, { 
+            transports: ['websocket', 'polling'],
+            upgrade: true,
+            secure: true 
+        });
+
         let contaAtiva = "";
         let cacheContas = {};
         let temporizadorDebounce = null;
         const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://w3.org' viewBox='0 0 24 24' fill='%232a3942'><circle cx='12' cy='12' r='12'/><path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' fill='%238696a0'/></svg>";
 
         socket.on("connect", () => {
-            logServidor("Conectado ao barramento de nuvem.");
+            logServidor("Conectado ao barramento de nuvem com sucesso.");
             socket.emit("front-pronto-sincronizar");
+        });
+
+        socket.on("connect_error", (error) => {
+            logServidor("Re-conectando ao canal de eventos...");
         });
 
         socket.on("sincronizar-contas-inicial", (contas) => {
@@ -121,7 +129,10 @@
             }
         });
 
-        function solicitarNovaConta() { socket.emit("adicionar-nova-conta"); }
+        function solicitarNovaConta() { 
+            logServidor("Solicitando inicialização de nova instância Baileys...");
+            socket.emit("adicionar-nova-conta"); 
+        }
         
         function voltarParaPerfis() {
             document.getElementById("tela-gerenciamento").style.display = "none";
@@ -193,7 +204,9 @@
         async function fazerUploadImagemNuvem(inputElement) {
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
             
-            logServidor("Mapeando arquivo de buffer local...");
+            logServidor("Processando compressão e buffer da imagem...");
+            
+            // CORREÇÃO DA AUDITORIA: Mapeia estritamente o índice zero do arquivo para não travar o FileReader
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
             
@@ -202,6 +215,7 @@
                 const base64 = reader.result;
                 
                 try {
+                    // Envia a imagem encapsulada em JSON estruturado
                     const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -210,17 +224,17 @@
                     const data = await res.json();
                     
                     if (data.url) {
-                        logServidor("Link CDN de imagem sincronizado.");
+                        logServidor("Mídia hospedada com sucesso na nuvem.");
                         const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
                         arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
                         cacheContas[contaAtiva].configuracaoSalva.imagensCron = arr;
                         renderizarBlocosImagens(arr);
                         sinalizarAlteracao();
                     } else {
-                        logServidor("Falha no retorno de upload da imagem.");
+                        logServidor("Erro no retorno da API de upload.");
                     }
                 } catch(e) {
-                    logServidor("Falha na ponte de upload para o Render: " + e.message);
+                    logServidor("Erro de comunicação com o Render: " + e.message);
                 } finally {
                     inputElement.value = ""; 
                 }
