@@ -3,21 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
+    <!-- Carrega a biblioteca Socket.IO de forma isolada e estrita para web -->
     <script src="https://socket.io"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         .container { width: 100%; max-width: 720px; background: #222e35; padding: 25px; border-radius: 12px; border: 1px solid #2a3942; text-align: center; box-sizing: border-box; }
         h1, h2, h3 { color: #00a884; margin: 0 0 10px 0; }
+        .notif-bar { background: #005c4b; border-left: 5px solid #00a884; padding: 12px; border-radius: 6px; text-align: left; font-size: 13px; font-weight: bold; margin-bottom: 20px; display: none; }
         .save-indicator { background: #00a884; color: #fff; padding: 6px 12px; font-size: 11px; font-weight: bold; border-radius: 4px; display: inline-block; margin-top: 5px; opacity: 0; transition: opacity 0.3s; }
         .profiles-grid { display: flex; justify-content: center; gap: 25px; flex-wrap: wrap; margin: 30px 0; }
         .profile-card { background: #111b21; border: 2px solid #2a3942; border-radius: 10px; padding: 15px; width: 130px; cursor: pointer; transition: all 0.2s; position: relative; box-sizing: border-box; }
         .profile-card:hover { border-color: #00a884; transform: translateY(-4px); }
+        .btn-hover-delete { position: absolute; top: -10px; right: -10px; background: #ea4335; color: white; border: none; font-size: 14px; font-weight: bold; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center; opacity: 0; transition: opacity 0.2s; z-index: 10; }
+        .profile-card:hover .btn-hover-delete { opacity: 1; }
         .profile-avatar { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; background: #202c33; margin: 0 auto 10px auto; border: 2px solid #2a3942; display: block; }
         .profile-name { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .btn-add-conta { background: transparent; color: #00a884; border: 2px dashed #00a884; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .btn-back-profiles { background: #202c33; color: #00a884; border: 1px solid #00a884; padding: 6px 12px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; float: left; }
         .checkbox-container { background: #111b21; border: 1px solid #2a3942; border-radius: 6px; max-height: 150px; overflow-y: auto; text-align: left; padding: 12px; margin: 10px 0; }
         .checkbox-item { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid #222e35; font-size: 13px; }
+        .checkbox-item input { width: 16px; height: 16px; accent-color: #00a884; cursor: pointer; }
         .media-uploader { border: 2px dashed #00a884; padding: 20px; border-radius: 8px; background: #111b21; margin: 15px 0; cursor: pointer; position: relative; }
         .media-uploader input[type="file"] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
         .cron-image-block { display: flex; flex-direction: column; background: #111b21; border: 1px solid #2a3942; padding: 15px; border-radius: 8px; margin: 15px 0; gap: 12px; text-align: left; box-sizing: border-box; }
@@ -39,6 +44,7 @@
     </style>
 </head>
 <body>
+    <div id="notificacao-disparo" class="notif-bar"></div>
     <div id="central-sistema" class="container">
         <div id="tela-perfis" class="profiles-screen">
             <h1>Selecione o Perfil do WhatsApp</h1>
@@ -59,6 +65,7 @@
                 <div id="container-grupos" class="checkbox-container"></div>
                 <label style="display:block; text-align:left; font-size:12px; color:#8696a0; margin-top:10px;">Legenda/Texto Padrão Fallback:</label>
                 <textarea id="mensagem-texto" placeholder="Texto de fallback..." oninput="sinalizarAlteracaoComDebounce()"></textarea>
+                
                 <div class="media-uploader">
                     <span style="font-size:13px; color:#00a884; font-weight:bold;">📂 Selecionar Imagem Principal</span>
                     <input type="file" accept="image/*" onchange="fazerUploadImagemNuvem(this)">
@@ -73,8 +80,11 @@
         </div>
         <textarea id="console-logs-painel" class="log-textarea" readonly placeholder="Aguardando eventos..."></textarea>
     </div>
+
     <script>
+        // LINK DO SEU SERVIDOR QUE JÁ ESTÁ LIVE NO RENDER
         const SERVIDOR_URL = "https://onrender.com"; 
+        
         const socket = io(SERVIDOR_URL);
         let contaAtiva = "";
         let cacheContas = {};
@@ -85,11 +95,15 @@
             logServidor("Conectado ao barramento de nuvem.");
             socket.emit("front-pronto-sincronizar");
         });
+
         socket.on("sincronizar-contas-inicial", (contas) => {
             cacheContas = {};
-            contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: [], configuracaoSalva: c }; });
+            contas.forEach(c => {
+                cacheContas[c.idConta] = { listaGrupos: [], configuracaoSalva: c };
+            });
             renderizarGradePerfisNativos();
         });
+
         socket.off("bot-conectado-multi");
         socket.on("bot-conectado-multi", (p) => {
             if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
@@ -97,17 +111,30 @@
             renderizarGradePerfisNativos();
             if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
         });
+
+        socket.on("notificar-disparo", (d) => {
+            const notif = document.getElementById("notificacao-disparo");
+            if(notif) {
+                notif.innerText = `[CRON] Disparo automatizado executado para a conta: ${d.idConta}`;
+                notif.style.display = "block";
+                setTimeout(() => { notif.style.display = "none"; }, 5000);
+            }
+        });
+
         function solicitarNovaConta() { socket.emit("adicionar-nova-conta"); }
+        
         function voltarParaPerfis() {
             document.getElementById("tela-gerenciamento").style.display = "none";
             document.getElementById("tela-perfis").style.display = "block";
             contaAtiva = "";
             socket.emit("front-pronto-sincronizar");
         }
+
         function logServidor(m) {
             const el = document.getElementById("console-logs-painel");
             if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; }
         }
+
         function renderizarGradePerfisNativos() {
             const grid = document.getElementById("grid-perfis"); if(!grid) return;
             grid.innerHTML = "";
@@ -121,17 +148,20 @@
                 grid.appendChild(card);
             });
         }
+
         function abrirPainelGerenciamentoConta(id) {
             contaAtiva = id;
             document.getElementById("tela-perfis").style.display = "none";
             document.getElementById("tela-gerenciamento").style.display = "block";
             const dados = cacheContas[id];
+            
             socket.off(`qr-${id}`);
             socket.on(`qr-${id}`, (qrBase64Url) => {
                 const box = document.getElementById("qrcode-area");
                 box.style.display = "flex"; box.style.background = "#fff";
                 box.innerHTML = `<img src="${qrBase64Url}" width="200" height="200">`;
             });
+
             if (!dados || !dados.listaGrupos || dados.listaGrupos.length === 0) {
                 const box = document.getElementById("qrcode-area");
                 box.style.display = "flex"; box.style.background = "#111b21";
@@ -140,40 +170,67 @@
                 document.getElementById("painel-configuracao").style.pointerEvents = "none";
                 return;
             }
+
             document.getElementById("qrcode-area").style.display = "none";
             document.getElementById("painel-configuracao").style.opacity = "1";
             document.getElementById("painel-configuracao").style.pointerEvents = "all";
             document.getElementById("titulo-instancia").innerText = `Conectado: ${id}`;
+            
             const container = document.getElementById("container-grupos"); container.innerHTML = "";
             const alvos = dados.configuracaoSalva.gruposSelecionados || [];
+            
             dados.listaGrupos.forEach(g => {
                 const item = document.createElement("div"); item.className = "checkbox-item";
                 item.innerHTML = `<input type="checkbox" value="${g.id}" ${alvos.includes(g.id)?'checked':''}> <label>${g.name}</label>`;
                 item.querySelector('input').onchange = () => sinalizarAlteracao();
                 container.appendChild(item);
             });
+
             document.getElementById("mensagem-texto").value = dados.configuracaoSalva.texto || "";
             renderizarBlocosImagens(dados.configuracaoSalva.imagensCron || []);
         }
+
         async function fazerUploadImagemNuvem(inputElement) {
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
-            logServidor("Processando imagem...");
+            
+            logServidor("Mapeando arquivo de buffer local...");
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
+            
             reader.readAsDataURL(arquivoAlvo);
             reader.onloadend = async () => {
                 const base64 = reader.result;
-                const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
-                arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
-                cacheContas[contaAtiva].configuracaoSalva.imagensCron = arr;
-                renderizarBlocosImagens(arr);
-                sinalizarAlteracao();
-                inputElement.value = ""; 
+                
+                try {
+                    const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imageBase64: base64 })
+                    });
+                    const data = await res.json();
+                    
+                    if (data.url) {
+                        logServidor("Link CDN de imagem sincronizado.");
+                        const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
+                        arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
+                        cacheContas[contaAtiva].configuracaoSalva.imagensCron = arr;
+                        renderizarBlocosImagens(arr);
+                        sinalizarAlteracao();
+                    } else {
+                        logServidor("Falha no retorno de upload da imagem.");
+                    }
+                } catch(e) {
+                    logServidor("Falha na ponte de upload para o Render: " + e.message);
+                } finally {
+                    inputElement.value = ""; 
+                }
             };
         }
+
         function renderizarBlocosImagens(lista) {
             const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
             container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
+            
             lista.forEach((item, index) => {
                 let blocosHorariosHtml = (item.horariosDinamicos || ["08:00"]).map((hr, idxHora) => `
                     <div class="time-badge">
@@ -181,6 +238,7 @@
                         <button class="btn-del-time" onclick="excluirHorarioDinamicoLote(${index}, ${idxHora})">×</button>
                     </div>
                 `).join("");
+
                 const block = document.createElement("div");
                 block.className = "cron-image-block";
                 block.innerHTML = `
@@ -188,7 +246,7 @@
                         <img src="${item.caminho}" onerror="this.src=''; this.style.backgroundColor='#202c33'">
                         <div class="cron-image-info">
                             <strong>Bloco Agendado #${index + 1}</strong>
-                            <textarea class="individual-textarea" placeholder="Texto exclusivo..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
+                            <textarea class="individual-textarea" placeholder="Texto exclusivo para este bloco..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
                         </div>
                     </div>
                     <div class="cron-image-times-flex">
@@ -202,26 +260,57 @@
                 container.appendChild(block);
             });
         }
-        function atualizarTextoBlocoDinamico(index, valor) { cacheContas[contaAtiva].configuracaoSalva.imagensCron[index].textIndividual = valor; sinalizarAlteracaoComDebounce(); }
-        function atualizarHorarioDinamicoElemento(blockIdx, horaIdx, valor) { cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos[horaIdx] = valor; sinalizarAlteracao(); }
+
+        function atualizarTextoBlocoDinamico(index, valor) {
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[index].textIndividual = valor;
+            sinalizarAlteracaoComDebounce();
+        }
+
+        function atualizarHorarioDinamicoElemento(blockIdx, horaIdx, valor) {
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos[horaIdx] = valor;
+            sinalizarAlteracao();
+        }
+
         function adicionarNovoHorarioDinamicoLote(blockIdx) {
             const arrHoras = cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos || [];
-            arrHoras.push("12:00"); cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos = arrHoras;
-            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); sinalizarAlteracao();
+            arrHoras.push("12:00");
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos = arrHoras;
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
+            sinalizarAlteracao();
         }
+
         function excluirHorarioDinamicoLote(blockIdx, horaIdx) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
-            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); sinalizarAlteracao();
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
+            sinalizarAlteracao();
         }
-        function removerBlocoImagem(index) { cacheContas[contaAtiva].configuracaoSalva.imagensCron.splice(index, 1); renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); sinalizarAlteracao(); }
-        function sinalizarAlteracaoComDebounce() { clearTimeout(temporizadorDebounce); temporizadorDebounce = setTimeout(() => { sinalizarAlteracao(); }, 500); }
+
+        function removerBlocoImagem(index) { 
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron.splice(index, 1); 
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); 
+            sinalizarAlteracao(); 
+        }
+
+        function sinalizarAlteracaoComDebounce() {
+            clearTimeout(temporizadorDebounce);
+            temporizadorDebounce = setTimeout(() => {
+                sinalizarAlteracao();
+            }, 500);
+        }
+
         function sinalizarAlteracao() {
             if (!contaAtiva || !cacheContas[contaAtiva]) return;
             const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
-            const payload = { gruposSelecionados: Array.from(cbs).map(cb => cb.value), texto: document.getElementById("mensagem-texto").value, imagensCron: cacheContas[contaAtiva].configuracaoSalva.imagensCron || [] };
+            const payload = { 
+                gruposSelecionados: Array.from(cbs).map(cb => cb.value), 
+                texto: document.getElementById("mensagem-texto").value, 
+                imagensCron: cacheContas[contaAtiva].configuracaoSalva.imagensCron || [] 
+            };
             cacheContas[contaAtiva].configuracaoSalva = { ...cacheContas[contaAtiva].configuracaoSalva, ...payload };
             socket.emit("salvar-configuracao-multi", { idConta: contaAtiva, dados: payload });
-            const ind = document.getElementById("indicador-salvamento"); if(ind) { ind.style.opacity = "1"; setTimeout(() => ind.style.opacity = "0", 2000); }
+            
+            const ind = document.getElementById("indicador-salvamento"); 
+            if(ind) { ind.style.opacity = "1"; setTimeout(() => ind.style.opacity = "0", 2000); }
         }
     </script>
 </body>
