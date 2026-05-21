@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
-    <!-- Injeta o driver WebSocket com suporte nativo a cross-origin seguro -->
     <script src="https://socket.io"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -83,7 +82,6 @@
     <script>
         const SERVIDOR_URL = "https://onrender.com"; 
         
-        // Inicialização com transporte WebSocket forçado e liberação de Cross-Origin segura
         const socket = io(SERVIDOR_URL, { 
             transports: ['websocket', 'polling'],
             upgrade: true,
@@ -205,8 +203,6 @@
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
             
             logServidor("Processando compressão e buffer da imagem...");
-            
-            // CORREÇÃO DA AUDITORIA: Mapeia estritamente o índice zero do arquivo para não travar o FileReader
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
             
@@ -215,7 +211,6 @@
                 const base64 = reader.result;
                 
                 try {
-                    // Envia a imagem encapsulada em JSON estruturado
                     const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -234,98 +229,4 @@
                         logServidor("Erro no retorno da API de upload.");
                     }
                 } catch(e) {
-                    logServidor("Erro de comunicação com o Render: " + e.message);
-                } finally {
-                    inputElement.value = ""; 
-                }
-            };
-        }
-
-        function renderizarBlocosImagens(lista) {
-            const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
-            container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
-            
-            lista.forEach((item, index) => {
-                let blocosHorariosHtml = (item.horariosDinamicos || ["08:00"]).map((hr, idxHora) => `
-                    <div class="time-badge">
-                        <input type="time" value="${hr}" onchange="atualizarHorarioDinamicoElemento(${index}, ${idxHora}, this.value)">
-                        <button class="btn-del-time" onclick="excluirHorarioDinamicoLote(${index}, ${idxHora})">×</button>
-                    </div>
-                `).join("");
-
-                const block = document.createElement("div");
-                block.className = "cron-image-block";
-                block.innerHTML = `
-                    <div class="cron-image-header">
-                        <img src="${item.caminho}" onerror="this.src=''; this.style.backgroundColor='#202c33'">
-                        <div class="cron-image-info">
-                            <strong>Bloco Agendado #${index + 1}</strong>
-                            <textarea class="individual-textarea" placeholder="Texto exclusivo para este bloco..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
-                        </div>
-                    </div>
-                    <div class="cron-image-times-flex">
-                        <span style="font-size:11px; color:#8696a0; font-weight:bold;">Horários:</span>
-                        ${blocosHorariosHtml}
-                        <button class="btn-add-time-trigger" onclick="adicionarNovoHorarioDinamicoLote(${index})">+ Adicionar</button>
-                    </div>
-                    <div class="actions-row">
-                        <button class="btn-del-block" onclick="removerBlocoImagem(${index})">×</button>
-                    </div>`;
-                container.appendChild(block);
-            });
-        }
-
-        function atualizarTextoBlocoDinamico(index, valor) {
-            cacheContas[contaAtiva].configuracaoSalva.imagensCron[index].textIndividual = valor;
-            sinalizarAlteracaoComDebounce();
-        }
-
-        function atualizarHorarioDinamicoElemento(blockIdx, horaIdx, valor) {
-            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos[horaIdx] = valor;
-            sinalizarAlteracao();
-        }
-
-        function adicionarNovoHorarioDinamicoLote(blockIdx) {
-            const arrHoras = cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos || [];
-            arrHoras.push("12:00");
-            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos = arrHoras;
-            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
-            sinalizarAlteracao();
-        }
-
-        function excluirHorarioDinamicoLote(blockIdx, horaIdx) {
-            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
-            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
-            sinalizarAlteracao();
-        }
-
-        function removerBlocoImagem(index) { 
-            cacheContas[contaAtiva].configuracaoSalva.imagensCron.splice(index, 1); 
-            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); 
-            sinalizarAlteracao(); 
-        }
-
-        function sinalizarAlteracaoComDebounce() {
-            clearTimeout(temporizadorDebounce);
-            temporizadorDebounce = setTimeout(() => {
-                sinalizarAlteracao();
-            }, 500);
-        }
-
-        function sinalizarAlteracao() {
-            if (!contaAtiva || !cacheContas[contaAtiva]) return;
-            const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
-            const payload = { 
-                gruposSelecionados: Array.from(cbs).map(cb => cb.value), 
-                texto: document.getElementById("mensagem-texto").value, 
-                imagensCron: cacheContas[contaAtiva].configuracaoSalva.imagensCron || [] 
-            };
-            cacheContas[contaAtiva].configuracaoSalva = { ...cacheContas[contaAtiva].configuracaoSalva, ...payload };
-            socket.emit("salvar-configuracao-multi", { idConta: contaAtiva, dados: payload });
-            
-            const ind = document.getElementById("indicador-salvamento"); 
-            if(ind) { ind.style.opacity = "1"; setTimeout(() => ind.style.opacity = "0", 2000); }
-        }
-    </script>
-</body>
-</html>
+                    
