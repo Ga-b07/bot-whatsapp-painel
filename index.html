@@ -51,7 +51,7 @@
             <button class="btn-add-conta" onclick="solicitarNovaConta()">✨ Adicionar Nova Conta</button>
         </div>
         <div id="tela-gerenciamento" style="display:none;">
-            <button class="btn-back-profiles" onclick="voltarParaPerfis()"><!-- Aponta para a funcao real --> Alternar Perfil</button>
+            <button class="btn-back-profiles" onclick="voltarParaPerfis()">← Alternar Perfil</button>
             <h1 style="clear:both; padding-top:10px;">🤖 Central Multi-WhatsApp</h1>
             <div id="indicador-salvamento" class="save-indicator">✓ Alterações Salvas</div>
             <div id="qrcode-area" class="state-loader-box" style="display: none;">
@@ -81,10 +81,8 @@
     </div>
 
     <script>
-        // ENDEREÇO HOMOLOGADO E LIVE DO SEU BACK-END NO RENDER
         const SERVIDOR_URL = "https://onrender.com"; 
         
-        // Inicializacao com tunelamento forçado de WebSocket para pular travas de portas mistas do Chrome
         const socket = io(SERVIDOR_URL, { 
             transports: ['websocket', 'polling'],
             upgrade: true,
@@ -206,8 +204,6 @@
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
             
             logServidor("Processando compressão e buffer da imagem...");
-            
-            // BLINDAGEM DA FILA: Coleta estritamente o indice zero da FileList para nao travar o motor FileReader
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
             
@@ -216,7 +212,6 @@
                 const base64 = reader.result;
                 
                 try {
-                    // Despacha no payload estruturado esperado pelo express
                     const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -250,12 +245,13 @@
                     </div>
                 `).join("");
 
-                // BLINDAGEM VISUAL: Cria um ObjectURL local temporario na GPU do navegador para renderizar fotos sem travar a thread
+                // CORREÇÃO E BLINDAGEM DE SINTAXE (MIME-STRING FIX)
                 let srcImg = "";
                 if (item.caminho && item.caminho.startsWith("data:image")) {
                     try {
-                        const byteString = atob(item.caminho.split(',')[1]);
-                        const mimeString = item.caminho.split(',')[0].split(':')[1].split(';')[0];
+                        const parts = item.caminho.split(',');
+                        const byteString = atob(parts[1]);
+                        const mimeString = parts[0].split(':')[1].split(';')[0];
                         const ab = new ArrayBuffer(byteString.length);
                         const ia = new Uint8Array(ab);
                         for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
@@ -306,7 +302,7 @@
 
         function excluirHorarioDinamicoLote(blockIdx, horaIdx) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
-            renderizarGradePerfisNativos();
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
             sinalizarAlteracao();
         }
 
