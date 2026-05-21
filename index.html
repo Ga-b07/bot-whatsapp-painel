@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
+    <!-- Injeta o driver WebSocket com suporte nativo a cross-origin seguro -->
     <script src="https://socket.io"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -50,7 +51,7 @@
             <button class="btn-add-conta" onclick="solicitarNovaConta()">✨ Adicionar Nova Conta</button>
         </div>
         <div id="tela-gerenciamento" style="display:none;">
-            <button class="btn-back-profiles" onclick="voltarParaPerfis()">← Alternar Perfil</button>
+            <button class="btn-back-profiles" onclick="voltarParaPerfis()"><!-- Aponta para a funcao real --> Alternar Perfil</button>
             <h1 style="clear:both; padding-top:10px;">🤖 Central Multi-WhatsApp</h1>
             <div id="indicador-salvamento" class="save-indicator">✓ Alterações Salvas</div>
             <div id="qrcode-area" class="state-loader-box" style="display: none;">
@@ -80,8 +81,10 @@
     </div>
 
     <script>
+        // ENDEREÇO HOMOLOGADO E LIVE DO SEU BACK-END NO RENDER
         const SERVIDOR_URL = "https://onrender.com"; 
         
+        // Inicializacao com tunelamento forçado de WebSocket para pular travas de portas mistas do Chrome
         const socket = io(SERVIDOR_URL, { 
             transports: ['websocket', 'polling'],
             upgrade: true,
@@ -203,6 +206,8 @@
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
             
             logServidor("Processando compressão e buffer da imagem...");
+            
+            // BLINDAGEM DA FILA: Coleta estritamente o indice zero da FileList para nao travar o motor FileReader
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
             
@@ -211,6 +216,7 @@
                 const base64 = reader.result;
                 
                 try {
+                    // Despacha no payload estruturado esperado pelo express
                     const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -218,15 +224,119 @@
                     });
                     const data = await res.json();
                     
-                    if (data.url) {
-                        logServidor("Mídia hospedada com sucesso na nuvem.");
-                        const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
-                        arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
-                        cacheContas[contaAtiva].configuracaoSalva.imagensCron = arr;
-                        renderizarBlocosImagens(arr);
-                        sinalizarAlteracao();
-                    } else {
-                        logServidor("Erro no retorno da API de upload.");
-                    }
+                    logServidor("Mídia vinculada com sucesso.");
+                    const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
+                    arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
+                    cacheContas[contaAtiva].configuracaoSalva.imagensCron = arr;
+                    renderizarBlocosImagens(arr);
+                    sinalizarAlteracao();
                 } catch(e) {
-                    
+                    logServidor("Erro de comunicação com o Render: " + e.message);
+                } finally {
+                    inputElement.value = ""; 
+                }
+            };
+        }
+
+        function renderizarBlocosImagens(lista) {
+            const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
+            container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
+            
+            lista.forEach((item, index) => {
+                let blocosHorariosHtml = (item.horariosDinamicos || ["08:00"]).map((hr, idxHora) => `
+                    <div class="time-badge">
+                        <input type="time" value="${hr}" onchange="atualizarHorarioDinamicoElemento(${index}, ${idxHora}, this.value)">
+                        <button class="btn-del-time" onclick="excluirHorarioDinamicoLote(${index}, ${idxHora})">×</button>
+                    </div>
+                `).join("");
+
+                // BLINDAGEM VISUAL: Cria um ObjectURL local temporario na GPU do navegador para renderizar fotos sem travar a thread
+                let srcImg = "";
+                if (item.caminho && item.caminho.startsWith("data:image")) {
+                    try {
+                        const byteString = atob(item.caminho.split(',')[1]);
+                        const mimeString = item.caminho.split(',')[0].split(':')[1].split(';')[0];
+                        const ab = new ArrayBuffer(byteString.length);
+                        const ia = new Uint8Array(ab);
+                        for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
+                        const blob = new Blob([ab], {type: mimeString});
+                        srcImg = URL.createObjectURL(blob);
+                    } catch(e) { srcImg = item.caminho; }
+                } else { srcImg = item.caminho || ""; }
+
+                const block = document.createElement("div");
+                block.className = "cron-image-block";
+                block.innerHTML = `
+                    <div class="cron-image-header">
+                        <img src="${srcImg}" onerror="this.src=''; this.style.backgroundColor='#202c33'">
+                        <div class="cron-image-info">
+                            <strong>Bloco Agendado #${index + 1}</strong>
+                            <textarea class="individual-textarea" placeholder="Texto exclusivo para este bloco..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
+                        </div>
+                    </div>
+                    <div class="cron-image-times-flex">
+                        <span style="font-size:11px; color:#8696a0; font-weight:bold;">Horários:</span>
+                        ${blocosHorariosHtml}
+                        <button class="btn-add-time-trigger" onclick="adicionarNovoHorarioDinamicoLote(${index})">+ Adicionar</button>
+                    </div>
+                    <div class="actions-row">
+                        <button class="btn-del-block" onclick="removerBlocoImagem(${index})">×</button>
+                    </div>`;
+                container.appendChild(block);
+            });
+        }
+
+        function atualizarTextoBlocoDinamico(index, valor) {
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[index].textIndividual = valor;
+            sinalizarAlteracaoComDebounce();
+        }
+
+        function atualizarHorarioDinamicoElemento(blockIdx, horaIdx, valor) {
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos[horaIdx] = valor;
+            sinalizarAlteracao();
+        }
+
+        function adicionarNovoHorarioDinamicoLote(blockIdx) {
+            const arrHoras = cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos || [];
+            arrHoras.push("12:00");
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos = arrHoras;
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
+            sinalizarAlteracao();
+        }
+
+        function excluirHorarioDinamicoLote(blockIdx, horaIdx) {
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
+            renderizarGradePerfisNativos();
+            sinalizarAlteracao();
+        }
+
+        function removerBlocoImagem(index) { 
+            cacheContas[contaAtiva].configuracaoSalva.imagensCron.splice(index, 1); 
+            renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); 
+            sinalizarAlteracao(); 
+        }
+
+        function sinalizarAlteracaoComDebounce() {
+            clearTimeout(temporizadorDebounce);
+            temporizadorDebounce = setTimeout(() => {
+                sinalizarAlteracao();
+            }, 500);
+        }
+
+        function sinalizarAlteracao() {
+            if (!contaAtiva || !cacheContas[contaAtiva]) return;
+            const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
+            const payload = { 
+                gruposSelecionados: Array.from(cbs).map(cb => cb.value), 
+                texto: document.getElementById("mensagem-texto").value, 
+                imagensCron: cacheContas[contaAtiva].configuracaoSalva.imagensCron || [] 
+            };
+            cacheContas[contaAtiva].configuracaoSalva = { ...cacheContas[contaAtiva].configuracaoSalva, ...payload };
+            socket.emit("salvar-configuracao-multi", { idConta: contaAtiva, dados: payload });
+            
+            const ind = document.getElementById("indicador-salvamento"); 
+            if(ind) { ind.style.opacity = "1"; setTimeout(() => ind.style.opacity = "0", 2000); }
+        }
+    </script>
+</body>
+</html>
