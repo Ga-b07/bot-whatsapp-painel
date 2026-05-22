@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
     
-    <!-- Link alternativo universal sem bloqueios de segurança -->
-    <script src="https://unpkg.com" crossorigin="anonymous"></script>
+    <!-- FIX DEFINITIVO: Carrega a biblioteca diretamente do seu próprio backend rodando no Render -->
+    <script src="https://onrender.com"></script>
     
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -83,13 +83,17 @@
     </div>
 
     <script>
-        // Definição das funções no escopo global ANTES de inicializar o socket para evitar falhas de inicialização
+        window.logServidor = function(m) { 
+            const el = document.getElementById("console-logs-painel"); 
+            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; } 
+        };
+
         window.solicitarNovaConta = function() { 
-            if (typeof socket !== "undefined") {
+            if (typeof socket !== "undefined" && socket.connected) {
                 logServidor("Solicitando inicialização de nova instância Baileys..."); 
                 socket.emit("adicionar-nova-conta"); 
             } else {
-                logServidor("Erro: Sistema de rede não inicializado.");
+                logServidor("Erro: Sem conexão ativa com o servidor de rede.");
             }
         };
 
@@ -97,23 +101,17 @@
             document.getElementById("tela-gerenciamento").style.display = "none"; 
             document.getElementById("tela-perfis").style.display = "block"; 
             contaAtiva = ""; 
-            if (typeof socket !== "undefined") socket.emit("front-pronto-sincronizar"); 
+            if (typeof socket !== "undefined" && socket.connected) socket.emit("front-pronto-sincronizar"); 
         };
 
-        window.logServidor = function(m) { 
-            const el = document.getElementById("console-logs-painel"); 
-            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; } 
-        };
-
-        // Fallback e inicialização do ecossistema de rede
         const SERVIDOR_URL = "https://onrender.com"; 
         let socket;
 
         try {
-            // Inicializa a conexão se a biblioteca estiver disponível no navegador
-            socket = io(SERVIDOR_URL, { transports: ['websocket', 'polling'], upgrade: true, secure: true });
+            // Inicialização nativa do Socket.IO usando o arquivo injetado pelo próprio backend
+            socket = io(SERVIDOR_URL, { transports: ['websocket', 'polling'] });
         } catch(e) {
-            console.error("Falha ao abrir canal de sockets, tentando carregamento alternativo...", e);
+            console.error("Falha ao mapear socket local:", e);
         }
 
         let contaAtiva = "";
@@ -144,7 +142,7 @@
                 referenciasObjetosUrl.push(urlVirtual);
                 return urlVirtual;
             } catch (e) {
-                console.error("Erro na conversão de imagem:", e);
+                console.error("Erro na conversão:", e);
                 return "";
             }
         }
@@ -342,7 +340,7 @@
         };
 
         window.sinalizarAlteracao = function() {
-            if (!contaAtiva || !cacheContas[contaAtiva] || !socket) return;
+            if (!contaAtiva || !cacheContas[contaAtiva] || !socket || !socket.connected) return;
             
             const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
             const gruposSelecionados = Array.from(cbs).map(cb => cb.value);
