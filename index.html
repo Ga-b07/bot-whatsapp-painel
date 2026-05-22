@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
     
-    <!-- Link interno perfeito: Puxa a biblioteca do mesmo servidor, destruindo o erro de CORS -->
-    <script src="/socket.io.js"></script>
+    <!-- FIX RESOLVIDO: Aponta diretamente para a rota de script criada no seu backend público do Render -->
+    <script src="https://onrender.com"></script>
     
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -104,8 +104,8 @@
             if (typeof socket !== "undefined") socket.emit("front-pronto-sincronizar"); 
         };
 
-        // Usa a URL nativa da barra de endereço para não errar nunca
-        const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
+        const SERVIDOR_URL = "https://onrender.com"; 
+        const socket = io(SERVIDOR_URL, { transports: ['websocket', 'polling'] });
 
         let contaAtiva = "";
         let cacheContas = {};
@@ -123,8 +123,8 @@
             if (!base64String || !base64String.startsWith("data:image")) return "";
             try {
                 const partes = base64String.split(',');
-                const byteString = atob(partes[1]);
-                const mimeString = partes[0].split(':')[1].split(';')[0];
+                const byteString = atob(partes);
+                const mimeString = partes.split(':').split(';');
                 const ab = new ArrayBuffer(byteString.length);
                 const ia = new Uint8Array(ab);
                 for (let i = 0; i < byteString.length; i++) {
@@ -230,7 +230,7 @@
             reader.onloadend = async () => {
                 const base64 = reader.result;
                 try {
-                    const res = await fetch(`/api/upload`, {
+                    const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ imageBase64: base64 })
