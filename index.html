@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
-    <!-- Injeta o driver WebSocket com suporte nativo a cross-origin seguro -->
+    <!-- Correção #ERR_03: Injeção do CDN oficial estável do Socket.IO v4 -->
     <script src="https://socket.io"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -17,7 +18,6 @@
         .profile-avatar { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; background: #202c33; margin: 0 auto 10px auto; border: 2px solid #2a3942; display: block; pointer-events: none; }
         .profile-name { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
         .btn-add-conta { background: transparent; color: #00a884; border: 2px dashed #00a884; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-        .btn-add-conta:hover { background: rgba(0, 168, 132, 0.1); }
         .btn-back-profiles { background: #202c33; color: #00a884; border: 1px solid #00a884; padding: 6px 12px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; float: left; }
         .checkbox-container { background: #111b21; border: 1px solid #2a3942; border-radius: 6px; max-height: 150px; overflow-y: auto; text-align: left; padding: 12px; margin: 10px 0; }
         .checkbox-item { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid #222e35; font-size: 13px; }
@@ -77,73 +77,101 @@
         <div style="display:flex; justify-content:space-between; color:#00a884; font-size:12px; margin-bottom:6px;">
             <span>📟 LOGS DO SISTEMA (NUVEM)</span>
         </div>
-        <textarea id="console-logs-painel" class="log-textarea" readonly placeholder="Aguardando eventos..."></textarea>
+        <textarea id="console-logs-painel" class="log-textarea" readonly placeholder="Aguardando events..."></textarea>
     </div>
 
     <script>
-        const SERVIDOR_URL = "https://onrender.com"; 
-        
+        // Detecção dinâmica de ambiente para não quebrar testes locais
+        const SERVIDOR_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+            ? "http://localhost:3000"
+            : "https://onrender.com"; 
+
         const socket = io(SERVIDOR_URL, { 
-            transports: ['websocket', 'polling'],
-            upgrade: true,
+            transports: ['websocket', 'polling'], 
+            upgrade: true, 
             secure: true 
         });
 
         let contaAtiva = "";
         let cacheContas = {};
         let temporizadorDebounce = null;
+        let referenciasObjetosUrl = []; // Cache de mídias para evitar vazamentos de memória RAM
+        
         const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://w3.org' viewBox='0 0 24 24' fill='%232a3942'><circle cx='12' cy='12' r='12'/><path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' fill='%238696a0'/></svg>";
 
-        socket.on("connect", () => {
-            logServidor("Conectado ao barramento de nuvem com sucesso.");
-            socket.emit("front-pronto-sincronizar");
+        // Limpador atômico de cache GPU para sanar o erro #ERR_05
+        function limparReferenciasObjetosAnteriores() {
+            referenciasObjetosUrl.forEach(url => URL.revokeObjectURL(url));
+            referenciasObjetosUrl = [];
+        }
+
+        // Transforma strings Base64 brutas em ponteiros virtuais leves (Blob)
+        function criarUrlSeguraBase64(base64String) {
+            if (!base64String || !base64String.startsWith("data:image")) return "";
+            try {
+                const partes = base64String.split(',');
+                const byteString = atob(partes[1]);
+                const mimeString = partes[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], { type: mimeString });
+                const urlVirtual = URL.createObjectURL(blob);
+                referenciasObjetosUrl.push(urlVirtual);
+                return urlVirtual;
+            } catch (e) {
+                console.error("Erro ao otimizar renderização de imagem:", e);
+                return "";
+            }
+        }
+
+        socket.on("connect", () => { 
+            logServidor("Conectado ao barramento de nuvem com sucesso."); 
+            socket.emit("front-pronto-sincronizar"); 
         });
 
-        socket.on("connect_error", (error) => {
-            logServidor("Re-conectando ao canal de eventos...");
+        socket.on("sincronizar-contas-inicial", (contas) => { 
+            cacheContas = {}; 
+            contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: c.listaGrupos || [], configuracaoSalva: c }; }); 
+            renderizarGradePerfisNativos(); 
         });
-
-        socket.on("sincronizar-contas-inicial", (contas) => {
-            cacheContas = {};
-            contas.forEach(c => {
-                cacheContas[c.idConta] = { listaGrupos: [], configuracaoSalva: c };
-            });
-            renderizarGradePerfisNativos();
-        });
-
+        
         socket.off("bot-conectado-multi");
         socket.on("bot-conectado-multi", (p) => {
             if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
-            cacheContas[p.idConta] = { listaGrupos: p.listaGrupos, configuracaoSalva: p.configuracaoSalva };
+            cacheContas[p.idConta] = { listaGrupos: p.listaGrupos || [], configuracaoSalva: p.configuracaoSalva };
             renderizarGradePerfisNativos();
             if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
         });
 
         socket.on("notificar-disparo", (d) => {
             const notif = document.getElementById("notificacao-disparo");
-            if(notif) {
-                notif.innerText = `[CRON] Disparo automatizado executado para a conta: ${d.idConta}`;
-                notif.style.display = "block";
-                setTimeout(() => { notif.style.display = "none"; }, 5000);
+            if(notif) { 
+                notif.innerText = `[CRON] Disparo executado na conta: ${d.idConta}`; 
+                notif.style.display = "block"; 
+                setTimeout(() => { notif.style.display = "none"; }, 5000); 
             }
         });
 
-        function solicitarNovaConta() { 
-            logServidor("Solicitando inicialização de nova instância Baileys...");
+        // Vinculações explícitas no escopo Global para compatibilidade total com chamadas embutidas da DOM
+        window.solicitarNovaConta = function() { 
+            logServidor("Solicitando inicialização de nova instância Baileys..."); 
             socket.emit("adicionar-nova-conta"); 
-        }
-        
-        function voltarParaPerfis() {
-            document.getElementById("tela-gerenciamento").style.display = "none";
-            document.getElementById("tela-perfis").style.display = "block";
-            contaAtiva = "";
-            socket.emit("front-pronto-sincronizar");
-        }
+        };
 
-        function logServidor(m) {
-            const el = document.getElementById("console-logs-painel");
-            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; }
-        }
+        window.voltarParaPerfis = function() { 
+            document.getElementById("tela-gerenciamento").style.display = "none"; 
+            document.getElementById("tela-perfis").style.display = "block"; 
+            contaAtiva = ""; 
+            socket.emit("front-pronto-sincronizar"); 
+        };
+
+        window.logServidor = function(m) { 
+            const el = document.getElementById("console-logs-painel"); 
+            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; } 
+        };
 
         function renderizarGradePerfisNativos() {
             const grid = document.getElementById("grid-perfis"); if(!grid) return;
@@ -153,13 +181,13 @@
                 const foto = cData.fotoPerfilUrl || fallbackAvatar;
                 const card = document.createElement("div");
                 card.className = "profile-card";
-                card.innerHTML = `<img src="${foto}" class="profile-avatar" onerror="this.src='${fallbackAvatar}'"><div class="profile-name">${id}</div>`;
+                card.innerHTML = `<img src="${foto}" class="profile-avatar" onerror="this.onerror=null; this.src='${fallbackAvatar}'"><div class="profile-name">${id}</div>`;
                 card.onclick = () => abrirPainelGerenciamentoConta(id);
                 grid.appendChild(card);
             });
         }
 
-        function abrirPainelGerenciamentoConta(id) {
+        window.abrirPainelGerenciamentoConta = function(id) {
             contaAtiva = id;
             document.getElementById("tela-perfis").style.display = "none";
             document.getElementById("tela-gerenciamento").style.display = "block";
@@ -198,12 +226,12 @@
 
             document.getElementById("mensagem-texto").value = dados.configuracaoSalva.texto || "";
             renderizarBlocosImagens(dados.configuracaoSalva.imagensCron || []);
-        }
+        };
 
-        async function fazerUploadImagemNuvem(inputElement) {
+        window.fazerUploadImagemNuvem = async function(inputElement) {
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
             
-            logServidor("Processando compressão e buffer da imagem...");
+            logServidor("Processando buffer da imagem...");
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
             
@@ -217,7 +245,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ imageBase64: base64 })
                     });
-                    const data = await res.json();
+                    await res.json();
                     
                     logServidor("Mídia vinculada com sucesso.");
                     const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
@@ -231,10 +259,14 @@
                     inputElement.value = ""; 
                 }
             };
-        }
+        };
 
         function renderizarBlocosImagens(lista) {
             const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
+            
+            // #ERR_05 Fix: Desaloca referências pesadas do navegador antes de renderizar a nova lista
+            limparReferenciasObjetosAnteriores();
+            
             container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
             
             lista.forEach((item, index) => {
@@ -245,29 +277,17 @@
                     </div>
                 `).join("");
 
-                // CORREÇÃO E BLINDAGEM DE SINTAXE (MIME-STRING FIX)
-                let srcImg = "";
-                if (item.caminho && item.caminho.startsWith("data:image")) {
-                    try {
-                        const parts = item.caminho.split(',');
-                        const byteString = atob(parts[1]);
-                        const mimeString = parts[0].split(':')[1].split(';')[0];
-                        const ab = new ArrayBuffer(byteString.length);
-                        const ia = new Uint8Array(ab);
-                        for (let i = 0; i < byteString.length; i++) { ia[i] = byteString.charCodeAt(i); }
-                        const blob = new Blob([ab], {type: mimeString});
-                        srcImg = URL.createObjectURL(blob);
-                    } catch(e) { srcImg = item.caminho; }
-                } else { srcImg = item.caminho || ""; }
+                // Obtém a URL virtual em vez do Base64 estático gigante para poupar a CPU
+                const srcImgSegura = criarUrlSeguraBase64(item.caminho);
 
                 const block = document.createElement("div");
                 block.className = "cron-image-block";
                 block.innerHTML = `
                     <div class="cron-image-header">
-                        <img src="${srcImg}" onerror="this.src=''; this.style.backgroundColor='#202c33'">
-                        <div class="cron-image-info">
+                        <img src="${srcImgSegura}" onerror="this.src=''; this.style.backgroundColor='#202c33'">
+                        <div class="cron-image-info" style="flex: 1;">
                             <strong>Bloco Agendado #${index + 1}</strong>
-                            <textarea class="individual-textarea" placeholder="Texto exclusivo para este bloco..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
+                            <textarea class="individual-textarea" style="width:100%; height:45px; background:#222e35; border:1px solid #2a3942; color:#fff; resize:none; font-size:12px; margin-top:5px; border-radius:4px;" placeholder="Texto exclusivo para este bloco..." oninput="atualizarTextoBlocoDinamico(${index}, this.value)">${item.textIndividual || ""}</textarea>
                         </div>
                     </div>
                     <div class="cron-image-times-flex">
@@ -282,57 +302,63 @@
             });
         }
 
-        function atualizarTextoBlocoDinamico(index, valor) {
+        window.atualizarTextoBlocoDinamico = function(index, valor) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[index].textIndividual = valor;
             sinalizarAlteracaoComDebounce();
-        }
+        };
 
-        function atualizarHorarioDinamicoElemento(blockIdx, horaIdx, valor) {
+        window.atualizarHorarioDinamicoElemento = function(blockIdx, horaIdx, valor) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos[horaIdx] = valor;
             sinalizarAlteracao();
-        }
+        };
 
-        function adicionarNovoHorarioDinamicoLote(blockIdx) {
+        window.adicionarNovoHorarioDinamicoLote = function(blockIdx) {
             const arrHoras = cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos || [];
             arrHoras.push("12:00");
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos = arrHoras;
             renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
             sinalizarAlteracao();
-        }
+        };
 
-        function excluirHorarioDinamicoLote(blockIdx, horaIdx) {
+        window.excluirHorarioDinamicoLote = function(blockIdx, horaIdx) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
             renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
             sinalizarAlteracao();
-        }
+        };
 
-        function removerBlocoImagem(index) { 
+        window.removerBlocoImagem = function(index) { 
             cacheContas[contaAtiva].configuracaoSalva.imagensCron.splice(index, 1); 
             renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron); 
             sinalizarAlteracao(); 
-        }
+        };
 
-        function sinalizarAlteracaoComDebounce() {
+        window.sinalizarAlteracaoComDebounce = function() {
             clearTimeout(temporizadorDebounce);
-            temporizadorDebounce = setTimeout(() => {
-                sinalizarAlteracao();
-            }, 500);
-        }
+            temporizadorDebounce = setTimeout(() => { sinalizarAlteracao(); }, 500);
+        };
 
-        function sinalizarAlteracao() {
+        window.sinalizarAlteracao = function() {
             if (!contaAtiva || !cacheContas[contaAtiva]) return;
-            const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
-            const payload = { 
-                gruposSelecionados: Array.from(cbs).map(cb => cb.value), 
-                texto: document.getElementById("mensagem-texto").value, 
-                imagensCron: cacheContas[contaAtiva].configuracaoSalva.imagensCron || [] 
-            };
-            cacheContas[contaAtiva].configuracaoSalva = { ...cacheContas[contaAtiva].configuracaoSalva, ...payload };
-            socket.emit("salvar-configuracao-multi", { idConta: contaAtiva, dados: payload });
             
-            const ind = document.getElementById("indicador-salvamento"); 
-            if(ind) { ind.style.opacity = "1"; setTimeout(() => ind.style.opacity = "0", 2000); }
-        }
+            const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
+            const gruposSelecionados = Array.from(cbs).map(cb => cb.value);
+            const textoPadrao = document.getElementById("mensagem-texto").value;
+            
+            cacheContas[contaAtiva].configuracaoSalva.gruposSelecionados = gruposSelecionados;
+            cacheContas[contaAtiva].configuracaoSalva.texto = textoPadrao;
+
+            const indicador = document.getElementById("indicador-salvamento");
+            if (indicador) {
+                indicador.style.opacity = "1";
+                setTimeout(() => { indicador.style.opacity = "0"; }, 1500);
+            }
+
+            // Envio atômico em background para salvar no arquivo JSON do backend
+            socket.emit("salvar-configuracao-multi", { 
+                idConta: contaAtiva, 
+                dados: cacheContas[contaAtiva].configuracaoSalva 
+            });
+        };
     </script>
 </body>
 </html>
