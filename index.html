@@ -4,8 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
-    <!-- Link corrigido e direto: Puxa o arquivo JavaScript final sem redirecionamentos para evitar bloqueio de CORS -->
-    <script src="https://cloudflare.com"></script>
+    
+    <!-- Link alternativo universal sem bloqueios de segurança -->
+    <script src="https://unpkg.com" crossorigin="anonymous"></script>
+    
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         .container { width: 100%; max-width: 720px; background: #222e35; padding: 25px; border-radius: 12px; border: 1px solid #2a3942; text-align: center; box-sizing: border-box; }
@@ -81,16 +83,38 @@
     </div>
 
     <script>
-        // Lembre-se de conferir se a URL do seu backend no Render está exatamente igual a esta:
-        const SERVIDOR_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-            ? "http://localhost:3000"
-            : "https://onrender.com"; 
+        // Definição das funções no escopo global ANTES de inicializar o socket para evitar falhas de inicialização
+        window.solicitarNovaConta = function() { 
+            if (typeof socket !== "undefined") {
+                logServidor("Solicitando inicialização de nova instância Baileys..."); 
+                socket.emit("adicionar-nova-conta"); 
+            } else {
+                logServidor("Erro: Sistema de rede não inicializado.");
+            }
+        };
 
-        const socket = io(SERVIDOR_URL, { 
-            transports: ['websocket', 'polling'], 
-            upgrade: true, 
-            secure: true 
-        });
+        window.voltarParaPerfis = function() { 
+            document.getElementById("tela-gerenciamento").style.display = "none"; 
+            document.getElementById("tela-perfis").style.display = "block"; 
+            contaAtiva = ""; 
+            if (typeof socket !== "undefined") socket.emit("front-pronto-sincronizar"); 
+        };
+
+        window.logServidor = function(m) { 
+            const el = document.getElementById("console-logs-painel"); 
+            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; } 
+        };
+
+        // Fallback e inicialização do ecossistema de rede
+        const SERVIDOR_URL = "https://onrender.com"; 
+        let socket;
+
+        try {
+            // Inicializa a conexão se a biblioteca estiver disponível no navegador
+            socket = io(SERVIDOR_URL, { transports: ['websocket', 'polling'], upgrade: true, secure: true });
+        } catch(e) {
+            console.error("Falha ao abrir canal de sockets, tentando carregamento alternativo...", e);
+        }
 
         let contaAtiva = "";
         let cacheContas = {};
@@ -120,55 +144,39 @@
                 referenciasObjetosUrl.push(urlVirtual);
                 return urlVirtual;
             } catch (e) {
-                console.error("Erro ao otimizar renderização de imagem:", e);
+                console.error("Erro na conversão de imagem:", e);
                 return "";
             }
         }
 
-        socket.on("connect", () => { 
-            logServidor("Conectado ao barramento de nuvem com sucesso."); 
-            socket.emit("front-pronto-sincronizar"); 
-        });
+        if (socket) {
+            socket.on("connect", () => { 
+                logServidor("Conectado ao barramento de nuvem com sucesso."); 
+                socket.emit("front-pronto-sincronizar"); 
+            });
 
-        socket.on("sincronizar-contas-inicial", (contas) => { 
-            cacheContas = {}; 
-            contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: c.listaGrupos || [], configuracaoSalva: c }; }); 
-            renderizarGradePerfisNativos(); 
-        });
-        
-        socket.off("bot-conectado-multi");
-        socket.on("bot-conectado-multi", (p) => {
-            if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
-            cacheContas[p.idConta] = { listaGrupos: p.listaGrupos || [], configuracaoSalva: p.configuracaoSalva };
-            renderizarGradePerfisNativos();
-            if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
-        });
+            socket.on("sincronizar-contas-inicial", (contas) => { 
+                cacheContas = {}; 
+                contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: c.listaGrupos || [], configuracaoSalva: c }; }); 
+                renderizarGradePerfisNativos(); 
+            });
+            
+            socket.on("bot-conectado-multi", (p) => {
+                if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
+                cacheContas[p.idConta] = { listaGrupos: p.listaGrupos || [], configuracaoSalva: p.configuracaoSalva };
+                renderizarGradePerfisNativos();
+                if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
+            });
 
-        socket.on("notificar-disparo", (d) => {
-            const notif = document.getElementById("notificacao-disparo");
-            if(notif) { 
-                notif.innerText = `[CRON] Disparo executado na conta: ${d.idConta}`; 
-                notif.style.display = "block"; 
-                setTimeout(() => { notif.style.display = "none"; }, 5000); 
-            }
-        });
-
-        window.solicitarNovaConta = function() { 
-            logServidor("Solicitando inicialização de nova instância Baileys..."); 
-            socket.emit("adicionar-nova-conta"); 
-        };
-
-        window.voltarParaPerfis = function() { 
-            document.getElementById("tela-gerenciamento").style.display = "none"; 
-            document.getElementById("tela-perfis").style.display = "block"; 
-            contaAtiva = ""; 
-            socket.emit("front-pronto-sincronizar"); 
-        };
-
-        window.logServidor = function(m) { 
-            const el = document.getElementById("console-logs-painel"); 
-            if (el) { el.value += `[${new Date().toLocaleTimeString()}] ${m}\n`; el.scrollTop = el.scrollHeight; } 
-        };
+            socket.on("notificar-disparo", (d) => {
+                const notif = document.getElementById("notificacao-disparo");
+                if(notif) { 
+                    notif.innerText = `[CRON] Disparo executado na conta: ${d.idConta}`; 
+                    notif.style.display = "block"; 
+                    setTimeout(() => { notif.style.display = "none"; }, 5000); 
+                }
+            });
+        }
 
         function renderizarGradePerfisNativos() {
             const grid = document.getElementById("grid-perfis"); if(!grid) return;
@@ -190,12 +198,14 @@
             document.getElementById("tela-gerenciamento").style.display = "block";
             const dados = cacheContas[id];
             
-            socket.off(`qr-${id}`);
-            socket.on(`qr-${id}`, (qrBase64Url) => {
-                const box = document.getElementById("qrcode-area");
-                box.style.display = "flex"; box.style.background = "#fff";
-                box.innerHTML = `<img src="${qrBase64Url}" width="200" height="200">`;
-            });
+            if (socket) {
+                socket.off(`qr-${id}`);
+                socket.on(`qr-${id}`, (qrBase64Url) => {
+                    const box = document.getElementById("qrcode-area");
+                    box.style.display = "flex"; box.style.background = "#fff";
+                    box.innerHTML = `<img src="${qrBase64Url}" width="200" height="200">`;
+                });
+            }
 
             if (!dados || !dados.listaGrupos || dados.listaGrupos.length === 0) {
                 const box = document.getElementById("qrcode-area");
@@ -332,7 +342,7 @@
         };
 
         window.sinalizarAlteracao = function() {
-            if (!contaAtiva || !cacheContas[contaAtiva]) return;
+            if (!contaAtiva || !cacheContas[contaAtiva] || !socket) return;
             
             const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
             const gruposSelecionados = Array.from(cbs).map(cb => cb.value);
