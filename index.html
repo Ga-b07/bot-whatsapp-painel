@@ -77,11 +77,11 @@
         <div style="display:flex; justify-content:space-between; color:#00a884; font-size:12px; margin-bottom:6px;">
             <span>📟 LOGS DO SISTEMA (NUVEM)</span>
         </div>
-        <textarea id="console-logs-painel" class="log-textarea" readonly placeholder="Aguardando events..."></textarea>
+        <textarea id="console-logs-painel" class="log-textarea" readonly placeholder="Aguardando eventos..."></textarea>
     </div>
 
     <script>
-        // Detecção dinâmica de ambiente para não quebrar testes locais
+        // ATENÇÃO: Altere para a URL real do seu serviço de BACKEND no Render
         const SERVIDOR_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
             ? "http://localhost:3000"
             : "https://onrender.com"; 
@@ -95,17 +95,17 @@
         let contaAtiva = "";
         let cacheContas = {};
         let temporizadorDebounce = null;
-        let referenciasObjetosUrl = []; // Cache de mídias para evitar vazamentos de memória RAM
+        let referenciasObjetosUrl = []; // Liberação de RAM da GPU (#ERR_05)
         
         const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://w3.org' viewBox='0 0 24 24' fill='%232a3942'><circle cx='12' cy='12' r='12'/><path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' fill='%238696a0'/></svg>";
 
-        // Limpador atômico de cache GPU para sanar o erro #ERR_05
+        // Coletor de lixo para evitar vazamento de memória com Base64 na DOM (#ERR_05 Fix)
         function limparReferenciasObjetosAnteriores() {
             referenciasObjetosUrl.forEach(url => URL.revokeObjectURL(url));
             referenciasObjetosUrl = [];
         }
 
-        // Transforma strings Base64 brutas em ponteiros virtuais leves (Blob)
+        // Transforma a string Base64 em URL de objeto temporária leve para o navegador
         function criarUrlSeguraBase64(base64String) {
             if (!base64String || !base64String.startsWith("data:image")) return "";
             try {
@@ -155,7 +155,7 @@
             }
         });
 
-        // Vinculações explícitas no escopo Global para compatibilidade total com chamadas embutidas da DOM
+        // Exposição das funções ao escopo Global do navegador (Correção para chamadas nativas embutidas)
         window.solicitarNovaConta = function() { 
             logServidor("Solicitando inicialização de nova instância Baileys..."); 
             socket.emit("adicionar-nova-conta"); 
@@ -264,7 +264,7 @@
         function renderizarBlocosImagens(lista) {
             const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
             
-            // #ERR_05 Fix: Desaloca referências pesadas do navegador antes de renderizar a nova lista
+            // #ERR_05 Fix: Limpa ponteiros pesados antes de recriar blocos na interface gráfica
             limparReferenciasObjetosAnteriores();
             
             container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
@@ -277,7 +277,7 @@
                     </div>
                 `).join("");
 
-                // Obtém a URL virtual em vez do Base64 estático gigante para poupar a CPU
+                // Carrega o ponteiro Blob virtual seguro ao invés de injetar a string pesada Base64
                 const srcImgSegura = criarUrlSeguraBase64(item.caminho);
 
                 const block = document.createElement("div");
@@ -322,6 +322,7 @@
 
         window.excluirHorarioDinamicoLote = function(blockIdx, horaIdx) {
             cacheContas[contaAtiva].configuracaoSalva.imagensCron[blockIdx].horariosDinamicos.splice(horaIdx, 1);
+            renderizarGradePerfisNativos();
             renderizarBlocosImagens(cacheContas[contaAtiva].configuracaoSalva.imagensCron);
             sinalizarAlteracao();
         };
@@ -337,6 +338,7 @@
             temporizadorDebounce = setTimeout(() => { sinalizarAlteracao(); }, 500);
         };
 
+        // Conclusão e fechamento do bloco lógico cortado da função original de sincronização
         window.sinalizarAlteracao = function() {
             if (!contaAtiva || !cacheContas[contaAtiva]) return;
             
@@ -353,7 +355,7 @@
                 setTimeout(() => { indicador.style.opacity = "0"; }, 1500);
             }
 
-            // Envio atômico em background para salvar no arquivo JSON do backend
+            // Despacha as alterações em lote via Socket salvando o JSON de forma atômica no servidor
             socket.emit("salvar-configuracao-multi", { 
                 idConta: contaAtiva, 
                 dados: cacheContas[contaAtiva].configuracaoSalva 
