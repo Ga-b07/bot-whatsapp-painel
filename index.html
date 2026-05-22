@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
     
-    <!-- FIX DEFINITIVO: Carrega a biblioteca diretamente do seu próprio backend rodando no Render -->
-    <script src="https://onrender.com"></script>
+    <!-- Link interno perfeito: Puxa a biblioteca do mesmo servidor, destruindo o erro de CORS -->
+    <script src="/socket.io.js"></script>
     
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
@@ -89,11 +89,11 @@
         };
 
         window.solicitarNovaConta = function() { 
-            if (typeof socket !== "undefined" && socket.connected) {
+            if (typeof socket !== "undefined") {
                 logServidor("Solicitando inicialização de nova instância Baileys..."); 
                 socket.emit("adicionar-nova-conta"); 
             } else {
-                logServidor("Erro: Sem conexão ativa com o servidor de rede.");
+                logServidor("Erro: Sistema de rede não inicializado.");
             }
         };
 
@@ -101,18 +101,11 @@
             document.getElementById("tela-gerenciamento").style.display = "none"; 
             document.getElementById("tela-perfis").style.display = "block"; 
             contaAtiva = ""; 
-            if (typeof socket !== "undefined" && socket.connected) socket.emit("front-pronto-sincronizar"); 
+            if (typeof socket !== "undefined") socket.emit("front-pronto-sincronizar"); 
         };
 
-        const SERVIDOR_URL = "https://onrender.com"; 
-        let socket;
-
-        try {
-            // Inicialização nativa do Socket.IO usando o arquivo injetado pelo próprio backend
-            socket = io(SERVIDOR_URL, { transports: ['websocket', 'polling'] });
-        } catch(e) {
-            console.error("Falha ao mapear socket local:", e);
-        }
+        // Usa a URL nativa da barra de endereço para não errar nunca
+        const socket = io(window.location.origin, { transports: ['websocket', 'polling'] });
 
         let contaAtiva = "";
         let cacheContas = {};
@@ -142,39 +135,36 @@
                 referenciasObjetosUrl.push(urlVirtual);
                 return urlVirtual;
             } catch (e) {
-                console.error("Erro na conversão:", e);
                 return "";
             }
         }
 
-        if (socket) {
-            socket.on("connect", () => { 
-                logServidor("Conectado ao barramento de nuvem com sucesso."); 
-                socket.emit("front-pronto-sincronizar"); 
-            });
+        socket.on("connect", () => { 
+            logServidor("Conectado ao barramento de nuvem com sucesso."); 
+            socket.emit("front-pronto-sincronizar"); 
+        });
 
-            socket.on("sincronizar-contas-inicial", (contas) => { 
-                cacheContas = {}; 
-                contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: c.listaGrupos || [], configuracaoSalva: c }; }); 
-                renderizarGradePerfisNativos(); 
-            });
-            
-            socket.on("bot-conectado-multi", (p) => {
-                if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
-                cacheContas[p.idConta] = { listaGrupos: p.listaGrupos || [], configuracaoSalva: p.configuracaoSalva };
-                renderizarGradePerfisNativos();
-                if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
-            });
+        socket.on("sincronizar-contas-inicial", (contas) => { 
+            cacheContas = {}; 
+            contas.forEach(c => { cacheContas[c.idConta] = { listaGrupos: c.listaGrupos || [], configuracaoSalva: c }; }); 
+            renderizarGradePerfisNativos(); 
+        });
+        
+        socket.on("bot-conectado-multi", (p) => {
+            if (p.idAntigo && cacheContas[p.idAntigo]) delete cacheContas[p.idAntigo];
+            cacheContas[p.idConta] = { listaGrupos: p.listaGrupos || [], configuracaoSalva: p.configuracaoSalva };
+            renderizarGradePerfisNativos();
+            if (contaAtiva === p.idConta || contaAtiva === p.idAntigo) abrirPainelGerenciamentoConta(p.idConta);
+        });
 
-            socket.on("notificar-disparo", (d) => {
-                const notif = document.getElementById("notificacao-disparo");
-                if(notif) { 
-                    notif.innerText = `[CRON] Disparo executado na conta: ${d.idConta}`; 
-                    notif.style.display = "block"; 
-                    setTimeout(() => { notif.style.display = "none"; }, 5000); 
-                }
-            });
-        }
+        socket.on("notificar-disparo", (d) => {
+            const notif = document.getElementById("notificacao-disparo");
+            if(notif) { 
+                notif.innerText = `[CRON] Disparo executado na conta: ${d.idConta}`; 
+                notif.style.display = "block"; 
+                setTimeout(() => { notif.style.display = "none"; }, 5000); 
+            }
+        });
 
         function renderizarGradePerfisNativos() {
             const grid = document.getElementById("grid-perfis"); if(!grid) return;
@@ -196,14 +186,12 @@
             document.getElementById("tela-gerenciamento").style.display = "block";
             const dados = cacheContas[id];
             
-            if (socket) {
-                socket.off(`qr-${id}`);
-                socket.on(`qr-${id}`, (qrBase64Url) => {
-                    const box = document.getElementById("qrcode-area");
-                    box.style.display = "flex"; box.style.background = "#fff";
-                    box.innerHTML = `<img src="${qrBase64Url}" width="200" height="200">`;
-                });
-            }
+            socket.off(`qr-${id}`);
+            socket.on(`qr-${id}`, (qrBase64Url) => {
+                const box = document.getElementById("qrcode-area");
+                box.style.display = "flex"; box.style.background = "#fff";
+                box.innerHTML = `<img src="${qrBase64Url}" width="200" height="200">`;
+            });
 
             if (!dados || !dados.listaGrupos || dados.listaGrupos.length === 0) {
                 const box = document.getElementById("qrcode-area");
@@ -235,23 +223,19 @@
 
         window.fazerUploadImagemNuvem = async function(inputElement) {
             if (!contaAtiva || !inputElement.files || inputElement.files.length === 0) return;
-            
             logServidor("Processando buffer da imagem...");
             const arquivoAlvo = inputElement.files[0]; 
             const reader = new FileReader();
-            
             reader.readAsDataURL(arquivoAlvo);
             reader.onloadend = async () => {
                 const base64 = reader.result;
-                
                 try {
-                    const res = await fetch(`${SERVIDOR_URL}/api/upload`, {
+                    const res = await fetch(`/api/upload`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ imageBase64: base64 })
                     });
                     await res.json();
-                    
                     logServidor("Mídia vinculada com sucesso.");
                     const arr = cacheContas[contaAtiva].configuracaoSalva.imagensCron || [];
                     arr.push({ caminho: base64, textIndividual: "", extras: [], horariosDinamicos: ["08:00"] });
@@ -259,7 +243,7 @@
                     renderizarBlocosImagens(arr);
                     sinalizarAlteracao();
                 } catch(e) {
-                    logServidor("Erro de comunicação com o Render: " + e.message);
+                    logServidor("Erro de comunicação: " + e.message);
                 } finally {
                     inputElement.value = ""; 
                 }
@@ -268,7 +252,6 @@
 
         function renderizarBlocosImagens(lista) {
             const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
-            
             limparReferenciasObjetosAnteriores();
             container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
             
@@ -340,25 +323,18 @@
         };
 
         window.sinalizarAlteracao = function() {
-            if (!contaAtiva || !cacheContas[contaAtiva] || !socket || !socket.connected) return;
-            
+            if (!contaAtiva || !cacheContas[contaAtiva] || !socket) return;
             const cbs = document.querySelectorAll("#container-grupos input[type='checkbox']:checked");
             const gruposSelecionados = Array.from(cbs).map(cb => cb.value);
             const textoPadrao = document.getElementById("mensagem-texto").value;
-            
             cacheContas[contaAtiva].configuracaoSalva.gruposSelecionados = gruposSelecionados;
             cacheContas[contaAtiva].configuracaoSalva.texto = textoPadrao;
-
             const indicador = document.getElementById("indicador-salvamento");
             if (indicador) {
                 indicador.style.opacity = "1";
                 setTimeout(() => { indicador.style.opacity = "0"; }, 1500);
             }
-
-            socket.emit("salvar-configuracao-multi", { 
-                idConta: contaAtiva, 
-                dados: cacheContas[contaAtiva].configuracaoSalva 
-            });
+            socket.emit("salvar-configuracao-multi", { idConta: contaAtiva, dados: cacheContas[contaAtiva].configuracaoSalva });
         };
     </script>
 </body>
