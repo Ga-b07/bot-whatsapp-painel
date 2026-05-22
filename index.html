@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Central Nuvem - Bot WhatsApp 2026</title>
-    <!-- Correção Atômica do Console F12: CDN Seguro via HTTPS com suporte Cross-Origin contra bloqueios de segurança -->
-    <script src="https://cloudflare.com" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <!-- Link corrigido e direto: Puxa o arquivo JavaScript final sem redirecionamentos para evitar bloqueio de CORS -->
+    <script src="https://cloudflare.com"></script>
     <style>
         body { font-family: "Segoe UI", sans-serif; background: #0b141a; color: #e9edef; padding: 20px; margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         .container { width: 100%; max-width: 720px; background: #222e35; padding: 25px; border-radius: 12px; border: 1px solid #2a3942; text-align: center; box-sizing: border-box; }
@@ -81,7 +81,7 @@
     </div>
 
     <script>
-        // Configuração granular de endpoint: Altere para a URL correta do seu Web Service do Render
+        // Lembre-se de conferir se a URL do seu backend no Render está exatamente igual a esta:
         const SERVIDOR_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
             ? "http://localhost:3000"
             : "https://onrender.com"; 
@@ -95,7 +95,7 @@
         let contaAtiva = "";
         let cacheContas = {};
         let temporizadorDebounce = null;
-        let referenciasObjetosUrl = []; // Fix #ERR_05: Coletor de lixo para imagens em memória RAM
+        let referenciasObjetosUrl = []; 
         
         const fallbackAvatar = "data:image/svg+xml;utf8,<svg xmlns='http://w3.org' viewBox='0 0 24 24' fill='%232a3942'><circle cx='12' cy='12' r='12'/><path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' fill='%238696a0'/></svg>";
 
@@ -120,7 +120,7 @@
                 referenciasObjetosUrl.push(urlVirtual);
                 return urlVirtual;
             } catch (e) {
-                console.error("Erro ao processar objeto Blob de mídia agendada:", e);
+                console.error("Erro ao otimizar renderização de imagem:", e);
                 return "";
             }
         }
@@ -153,7 +153,6 @@
             }
         });
 
-        // Vinculação explícita de funções nativas ao escopo window do navegador
         window.solicitarNovaConta = function() { 
             logServidor("Solicitando inicialização de nova instância Baileys..."); 
             socket.emit("adicionar-nova-conta"); 
@@ -262,9 +261,7 @@
         function renderizarBlocosImagens(lista) {
             const container = document.getElementById("lista-blocks-imagens"); if(!container) return;
             
-            // Fix #ERR_05: Destrói os lixos de renderizações anteriores da GPU antes de reestruturar a DOM
             limparReferenciasObjetosAnteriores();
-            
             container.innerHTML = lista.length === 0 ? `<span style="font-size:11px; color:#8696a0; display:block; margin-top:10px;">Nenhum bloco de disparo criado.</span>` : "";
             
             lista.forEach((item, index) => {
